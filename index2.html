@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>TypeORM SQL Log Beautifier</title>
+  <style>
+    body { font-family: sans-serif; padding: 1rem; background: #f9f9f9; }
+    textarea { width: 100%; height: 200px; padding: 0.5rem; font-family: monospace; margin-bottom: 1rem; }
+    .query-block { background: #272822; color: #f8f8f2; padding: 1rem; border-radius: 6px; margin-bottom: 1rem; position: relative; }
+    .query-block button.copy-btn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: #444;
+      color: #fff;
+      border: none;
+      padding: 4px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .keyword { color: #66d9ef; font-weight: bold; }
+    .string { color: #e6db74; }
+    .number { color: #ae81ff; }
+    .button-row { margin-bottom: 1rem; }
+    button { margin-right: 1rem; }
+    pre { margin: 0; white-space: pre-wrap; word-wrap: break-word; }
+  </style>
+</head>
+<body>
+  <h1>🛠️ TypeORM SQL Log Beautifier</h1>
+
+  <div class="button-row">
+    <button onclick="parseLog()">Parse</button>
+    <button onclick="saveJson()">💾 Save JSON</button>
+  </div>
+
+  <textarea id="input" placeholder="Paste TypeORM SQL logs here..."></textarea>
+
+  <div id="output"></div>
+
+  <script>
+    function parseLog() {
+      const input = document.getElementById('input').value;
+      const lines = input.split('\n');
+      const results = [];
+      let query = '', params = '';
+
+      for (let line of lines) {
+        if (line.includes('query:')) {
+          query = line.match(/query:\s+([\s\S]*?)--/i)?.[1]?.trim() || '';
+        }
+        if (line.includes('-- PARAMETERS:')) {
+          params = line.match(/--\s+PARAMETERS:\s+(\[[\s\S]+?\])/i)?.[1]?.trim() || '';
+          try {
+            const parsedParams = JSON.parse(params);
+            let i = 0;
+            const interpolated = query.replace(/\$\d+/g, () => {
+              const val = parsedParams[i++];
+              return typeof val === 'string' ? `'${val}'` : val;
+            });
+            results.push(beautifySQL(interpolated));
+          } catch (e) {
+            results.push('-- Parse error');
+          }
+        }
+      }
+
+      const outputDiv = document.getElementById('output');
+      outputDiv.innerHTML = '';
+
+      results.forEach((query, index) => {
+        const block = document.createElement('div');
+        block.className = 'query-block';
+
+        const button = document.createElement('button');
+        button.className = 'copy-btn';
+        button.innerText = '📋 Copy';
+        button.onclick = () => copyToClipboard(query.replace(/<[^>]*>/g, ''));
+
+        block.innerHTML = `<pre>${highlightSQL(query)}</pre>`;
+        block.appendChild(button);
+        outputDiv.appendChild(block);
+      });
+
+      window._lastParsed = results;
+    }
+
+    function highlightSQL(sql) {
+      return sql
+        .replace(/\b(SELECT|FROM|WHERE|AND|OR|JOIN|ON|IN|AS|IS|TRUE|FALSE|NOT|NULL|UPDATE|SET|INSERT|INTO|VALUES|DELETE|RETURNING|GROUP BY|ORDER BY|LIMIT|OFFSET|LEFT|RIGHT|INNER|OUTER)\b/gi,
+          match => `<span class="keyword">${match.toUpperCase()}</span>`)
+        .replace(/'[^']*'/g, match => `<span class="string">${match}</span>`)
+        .replace(/\b\d+(\.\d+)?\b/g, match => `<span class="number">${match}</span>`);
+    }
+
+    function beautifySQL(sql) {
+      return sql
+        .replace(/SELECT /i, 'SELECT\n  ')
+        .replace(/, /g, ',\n  ')
+        .replace(/ FROM /i, '\nFROM\n  ')
+        .replace(/ WHERE /i, '\nWHERE\n  ')
+        .replace(/ AND /gi, '\n  AND ')
+        .replace(/ OR /gi, '\n  OR ');
+    }
+
+    function copyToClipboard(text) {
+      const el = document.createElement('textarea');
+      el.value = text;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+      alert('✅ Copied to clipboard!');
+    }
+
+    function saveJson() {
+      const data = {
+        input: document.getElementById('input').value,
+        output: window._lastParsed || [],
+      };
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'parsed-sql-log.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+  </script>
+</body>
+</html>

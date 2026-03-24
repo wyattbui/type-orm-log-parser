@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Migration SQL Parser</title>
+  <style>
+    textarea, pre {
+      width: 100%;
+      min-height: 150px;
+      margin: 10px 0;
+      font-family: monospace;
+    }
+    button {
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h2>TypeORM Migration SQL Parser</h2>
+  <textarea id="input" placeholder="Paste TypeORM queryRunner.query(...) code here"></textarea>
+  <button onclick="parseSQL()">Parse SQL</button>
+  <pre id="output"></pre>
+
+  <script>
+    function parseSQL() {
+      const input = document.getElementById('input').value;
+      const regex = /queryRunner\.query\s*\(\s*`([\s\S]*?)`\s*\)/g;
+      const matches = [...input.matchAll(regex)];
+      const sqlStatements = matches.map(m => m[1].trim().replace(/\s+/g, ' ') + ';');
+      document.getElementById('output').textContent = sqlStatements.join('\n');
+    }
+  </script>
+</body>
+</html>

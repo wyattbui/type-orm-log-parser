@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>TypeORM SQL Log Beautifier</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --ink: #0f172a;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --btn: #111827;
+      --btn-hover: #1f2937;
+      --btn-ink: #fff;
+      --btn2: #4b5563;
+      --btn2-hover: #374151;
+      --card: #1f2937;
+      --card-ink: #e5e7eb;
+      --kw: #66d9ef;
+      --str: #e6db74;
+      --num: #ae81ff;
+      --entity: #93c5fd;
+    }
+
+    * {
+      box-sizing: border-box
+    }
+
+    html,
+    body {
+      height: 100%
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 14px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .container {
+      max-width: 2200px;
+      margin: 28px auto;
+      padding: 0 16px;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo {
+      display: inline-flex;
+      width: 36px;
+      height: 36px;
+      align-items: center;
+      justify-content: center;
+      border-radius: 10px;
+      background: #fff;
+      border: 1px solid var(--border);
+      box-shadow: 0 1px 0 rgba(0, 0, 0, .05);
+      font-size: 18px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 18px;
+      letter-spacing: .2px;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 8px 0 12px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      appearance: none;
+      border: 1px solid transparent;
+      cursor: pointer;
+      padding: 9px 14px;
+      border-radius: 10px;
+      font-weight: 700;
+      letter-spacing: .2px;
+      background: var(--btn);
+      color: var(--btn-ink);
+      box-shadow: 0 1px 0 rgba(255, 255, 255, .06) inset, 0 2px 4px rgba(0, 0, 0, .06);
+      transition: transform .05s ease, background .15s ease;
+    }
+
+    .btn:hover {
+      background: var(--btn-hover)
+    }
+
+    .btn:active {
+      transform: translateY(1px)
+    }
+
+    .btn.secondary {
+      background: var(--btn2)
+    }
+
+    .btn.secondary:hover {
+      background: var(--btn2-hover)
+    }
+
+    .pill {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: #fff;
+      color: #111827;
+      font-size: 12px;
+    }
+
+    .pill input {
+      margin: 0
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 220px;
+      resize: vertical;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: #fff;
+      color: #111827;
+      outline: none;
+      font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      white-space: pre-wrap;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+      overflow-x: hidden;
+      overflow-y: auto;
+    }
+
+    textarea:focus {
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, .15)
+    }
+
+    .output {
+      margin-top: 14px;
+    }
+
+    .query-block {
+      position: relative;
+      background: var(--card);
+      color: var(--card-ink);
+      border-radius: 14px;
+      padding: 16px 14px 14px;
+      margin: 16px 0;
+      box-shadow: 0 6px 24px rgba(0, 0, 0, .08), inset 0 1px 0 rgba(255, 255, 255, .04);
+      border: 1px solid rgba(255, 255, 255, .06);
+    }
+
+    .copy-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      padding: 7px 10px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, .08);
+      background: #374151;
+      color: #e5e7eb;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .copy-btn:hover {
+      background: #2b3441
+    }
+
+    .meta {
+      color: #9ca3af;
+      font-size: 12px;
+      margin-bottom: 8px;
+    }
+
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+
+    .keyword {
+      color: var(--kw);
+      font-weight: 700
+    }
+
+    .string {
+      color: var(--str)
+    }
+
+    .number {
+      color: var(--num)
+    }
+
+    .entity {
+      color: var(--entity);
+      font-weight: 600;
+    }
+
+    .ident {
+      color: #cbd5e1;
+      font-weight: 600;
+    }
+
+    .groups {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+      margin-top: 6px;
+      align-items: start;
+    }
+
+    .col-left,
+    .col-right {
+      display: grid;
+      gap: 10px
+    }
+
+    @media (min-width:900px) {
+      .groups {
+        grid-template-columns: 1.4fr 1fr;
+      }
+    }
+
+    .group {
+      border: 1px solid rgba(255, 255, 255, .08);
+      border-radius: 10px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, .02);
+    }
+
+    .group summary {
+      cursor: pointer;
+      list-style: none;
+      padding: 8px 12px;
+      color: #9ca3af;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      user-select: none;
+    }
+
+    .group[open] summary {
+      color: #e5e7eb
+    }
+
+    .group summary::-webkit-details-marker {
+      display: none
+    }
+
+    .group pre {
+      margin: 0;
+      padding: 10px 12px;
+    }
+
+    /* Insert inspector */
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .table th,
+    .table td {
+      border-bottom: 1px solid rgba(255, 255, 255, .08);
+      padding: 6px 8px;
+      vertical-align: top;
+    }
+
+    .table th {
+      color: #9ca3af;
+      font-weight: 600;
+      text-transform: none;
+    }
+
+    .mono {
+      font-family: inherit;
+      white-space: pre-wrap
+    }
+
+    .subtle {
+      color: #9ca3af;
+      font-size: 12px
+    }
+
+    .undef {
+      color: #fca5a5;
+      font-weight: 700;
+    }
+
+    .defaultv {
+      color: #6ddd2c;
+      font-weight: 700;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="brand">
+        <span class="logo">🛠️</span>
+        <h1>TypeORM SQL Log Beautifier</h1>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <button class="btn secondary" onclick="saveJson()">💾 Save JSON</button>
+    </div>
+
+    <textarea id="input" placeholder="Paste TypeORM SQL logs here..." spellcheck="false"></textarea>
+    <div id="output" class="output"></div>
+  </div>
+
+  <script>
+    /* ---------- helpers ---------- */
+    const escapeHtml = (s) => String(s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+    function splitByCommaOutsideParens(text) {
+      const out = []; let buf = ''; let depth = 0; let inStr = false;
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i], n = text[i + 1];
+        if (inStr) { buf += c; if (c === "'" && n == "'") { buf += n; i++; } else if (c === "'") { inStr = false; } continue; }
+        if (c === "'") { inStr = true; buf += c; continue; }
+        if (c === '(') { depth++; buf += c; continue; }
+        if (c === ')') { depth = Math.max(0, depth - 1); buf += c; continue; }
+        if (c === ',' && depth === 0) { out.push(buf.trim()); buf = ''; continue; }
+        buf += c;
+      }
+      if (buf.trim()) out.push(buf.trim());
+      return out;
+    }
+
+    /* ================== HIGHLIGHT (giữ nguyên hoa/thường) ================== */
+    function highlightSQL(sql) {
+      let work = sql;
+
+      // Bảo vệ "ident"
+      const dq = [];
+      work = work.replace(/"([^"]*)"/g, (m, id, offset, src) => {
+        let i = offset - 1; while (i >= 0 && /[\s,()]/.test(src[i])) i--;
+        let j = i; while (j >= 0 && /[A-Za-z_]/.test(src[j])) j--;
+        const prev = src.slice(j + 1, i + 1);
+        const afterAS = /^AS$/i.test(prev);
+        const beforeTableCtx = /^(FROM|JOIN|INTO|UPDATE|DELETE)$/i.test(prev);
+
+        // có alias "SomethingEntity" ngay sau?
+        let k = offset + m.length; while (k < src.length && /\s/.test(src[k])) k++;
+        let beforeEntityAlias = false;
+        if (src[k] === '"') { let e = k + 1; while (e < src.length && src[e] !== '"') e++; const nextId = src.slice(k + 1, e); beforeEntityAlias = /Entity/i.test(nextId); }
+
+        const idx = dq.length; dq.push({ id, afterAS, beforeTableCtx, beforeEntityAlias });
+        return `__DQ${idx}__`;
+      });
+
+      // Bảo vệ strings
+      const sq = []; work = work.replace(/'(?:''|[^'])*'/g, (m) => { const idx = sq.length; sq.push(m); return `__SQ${idx}__`; });
+
+      // Highlight phần còn lại
+      let text = escapeHtml(work);
+      text = text.replace(/\b(SELECT|FROM|WHERE|AND|OR|JOIN|LEFT|RIGHT|INNER|FULL|CROSS|ON|IN|AS|IS|TRUE|FALSE|NOT|NULL|UPDATE|SET|INSERT|INTO|VALUES|DELETE|RETURNING|GROUP BY|HAVING|ORDER BY|LIMIT|OFFSET)\b/gi,
+        m => `<span class="keyword">${m}</span>`);
+      text = text.replace(/\b\d+(\.\d+)?\b/g, m => `<span class="number">${m}</span>`);
+      text = text.replace(/\bundefined\b/gi, m => `<span class="undef">${m}</span>`);
+      text = text.replace(/\bDEFAULT\b/gi, m => `<span class="defaultv">${m}</span>`);
+
+      dq.forEach(({ id, afterAS, beforeTableCtx, beforeEntityAlias }, i) => {
+        const full = `"${id}"`;
+        const isEntityLike = /entity/i.test(id) || /__/.test(id) || beforeEntityAlias || beforeTableCtx;
+        const cls = (isEntityLike && !afterAS) ? 'entity' : 'ident';
+        text = text.replace(`__DQ${i}__`, `<span class="${cls}">${escapeHtml(full)}</span>`);
+      });
+      sq.forEach((s, i) => { text = text.replace(`__SQ${i}__`, `<span class="string">${escapeHtml(s)}</span>`); });
+      return text;
+    }
+
+    /* ================== FORMATTER ================== */
+    function beautifySQL(sql) {
+      let s = sql
+        .replace(/SELECT /i, 'SELECT\n  ')
+        .replace(/, /g, ',\n  ')
+        .replace(/\sFROM\s/ig, m => `\n${m.trim()}\n  `)
+        .replace(/\sWHERE\s/ig, m => `\n${m.trim()}\n  `)
+        .replace(/\sVALUES\s/ig, m => `\n${m.trim()}\n  `)
+        .replace(/\sRETURNING\s/ig, m => `\n${m.trim()}\n  `)
+        .replace(/\sAND\s/ig, m => `\n  ${m.trim()} `)
+        .replace(/\sOR\s/ig, m => `\n  ${m.trim()} `);
+
+      // INSERT: đưa "(" & ")" tách dòng
+      s = s.replace(/(INSERT\s+INTO[\s\S]*?)\(\s*/i, (_, p1) => `${p1}\n(\n  `);
+      s = s.replace(/(\n\(\n[\s\S]*?)\)/, (all, grp) => grp.replace(/\s*$/, '\n)'));
+      s = s.replace(/(\bVALUES\b)\s*\(\s*/i, (_, kw) => `${kw}\n(\n  `);
+      s = s.replace(/(\bVALUES\b\s*\n\(\n[\s\S]*?)\)/i, (all, grp) => grp.replace(/\s*$/, '\n)'));
+      s = s.replace(/\)\s*(VALUES)\b/ig, (_, kw) => `)\n${kw}`);
+      s = s.replace(/\)\s*(RETURNING)\b/ig, (_, kw) => `\n)\n${kw}`);
+      return s;
+    }
+
+    /* ================== INSERT PARSER (cho inspector) ================== */
+    function extractInsertInfo(sql) {
+      const mValues = /VALUES\b/i.exec(sql);
+      if (!/^\s*INSERT\b/i.test(sql) || !mValues) return null;
+
+      const head = sql.slice(0, mValues.index);
+      const mHead = /INSERT\s+INTO\s+([\s\S]*?)\(\s*([\s\S]*?)\s*\)\s*$/i.exec(head);
+      if (!mHead) return null;
+      const table = mHead[1].trim();
+      const cols = splitByCommaOutsideParens(mHead[2].trim());
+
+      // phần sau VALUES
+      let rest = sql.slice(mValues.index + mValues[0].length);
+      let returning = '';
+      const retPos = rest.search(/\bRETURNING\b/i);
+      if (retPos >= 0) { returning = rest.slice(retPos + 'RETURNING'.length).trim(); rest = rest.slice(0, retPos); }
+
+      // tách các value tuple: ( ... ), ( ... )
+      const rows = []; let i = 0;
+      while (i < rest.length) {
+        while (i < rest.length && /[\s,]/.test(rest[i])) i++;
+        if (i >= rest.length) break;
+        if (rest[i] !== '(') break;
+        i++; let depth = 1, inStr = false, buf = '';
+        for (; i < rest.length; i++) {
+          const c = rest[i], n = rest[i + 1];
+          if (inStr) { buf += c; if (c === "'" && n == "'") { buf += n; i++; } else if (c === "'") { inStr = false; } continue; }
+          if (c === "'") { inStr = true; buf += c; continue; }
+          if (c === '(') { depth++; buf += c; continue; }
+          if (c === ')') { depth--; if (depth === 0) { rows.push(buf.trim()); i++; break; } buf += c; continue; }
+          buf += c;
+        }
+      }
+      const valueRows = rows.map(r => splitByCommaOutsideParens(r));
+      return { table, columns: cols, rows: valueRows, returning };
+    }
+
+    /* ================== GROUPING (cho non-INSERT) ================== */
+    function splitSqlSections(formattedSql) {
+      const lines = formattedSql.split('\n');
+      const reJoin = /^(?:LEFT|RIGHT|INNER|FULL|CROSS)?\s*JOIN\b/i;
+      const reOther = /^(GROUP BY|HAVING|ORDER BY|LIMIT|OFFSET|RETURNING)\b/i;
+      const reValues = /^VALUES\b/i, reReturning = /^RETURNING\b/i;
+
+      let section = 'select';
+      const buckets = { select: [], from: [], where: [], other: [] };
+      for (const raw of lines) {
+        const line = raw.trimStart();
+        if (/^SELECT\b|^INSERT\b|^UPDATE\b|^DELETE\b/i.test(line)) { section = 'select'; buckets.select.push(raw); continue; }
+        if (/^FROM\b/i.test(line) || reJoin.test(line)) { section = 'from'; buckets.from.push(raw); continue; }
+        if (/^WHERE\b/i.test(line)) { section = 'where'; buckets.where.push(raw); continue; }
+        if (reValues.test(line) || reReturning.test(line) || reOther.test(line)) { section = 'other'; buckets.other.push(raw); continue; }
+        buckets[section].push(raw);
+      }
+      const join = a => a && a.length ? a.join('\n') : '';
+      return { select: join(buckets.select), from: join(buckets.from), where: join(buckets.where), other: join(buckets.other) };
+    }
+
+    function createGroup(title, text, openByDefault = true) {
+      if (!text || !text.trim()) return null;
+      const det = document.createElement('details'); det.className = 'group'; det.open = openByDefault;
+      const sum = document.createElement('summary'); sum.innerHTML = `${title}`;
+      const pre = document.createElement('pre'); pre.innerHTML = highlightSQL(text);
+      det.appendChild(sum); det.appendChild(pre); return det;
+    }
+
+    /* ========== GROUP Returning (cột phải) ========== */
+    function createReturningGroup(retText) {
+      if (!retText || !retText.trim()) return null;
+      const det = document.createElement('details');
+      det.className = 'group';
+      det.open = true;
+      const sum = document.createElement('summary');
+      sum.textContent = 'Returning';
+      const pre = document.createElement('pre');
+      pre.innerHTML = highlightSQL('RETURNING ' + retText.trim());
+      det.appendChild(sum); det.appendChild(pre);
+      return det;
+    }
+
+    /* ========== Insert Inspector (cột trái) ========== */
+    function createInsertInspector(info) {
+      const det = document.createElement('details');
+      det.className = 'group';
+      det.open = true;
+
+      const sum = document.createElement('summary');
+      sum.textContent = 'Query';
+      det.appendChild(sum);
+
+      // Header bar – thay cho "Row #1", hiển thị INSERT INTO ... (canh trái)
+      const bar = document.createElement('div');
+      bar.className = 'subtle';
+      bar.style.padding = '8px 12px';
+      bar.style.display = 'flex';
+      bar.style.alignItems = 'center';
+      bar.style.justifyContent = 'flex-start';
+      bar.innerHTML = highlightSQL(`INSERT INTO ${info.table}`);
+      det.appendChild(bar);
+
+      // Bảng 2 cột: Column / Value
+      const table = document.createElement('table');
+      table.className = 'table mono';
+      table.innerHTML = `
+        <thead>
+          <tr><th style="width:40%">Column</th><th>Value</th></tr>
+        </thead>
+        <tbody></tbody>`;
+      const tbody = table.querySelector('tbody');
+
+      // Cột trong INSERT (bỏ "AS ..." và quote ngoài)
+      const insertCols = info.columns.map(c =>
+        c.replace(/\s+AS\s+.*$/i, '').trim()
+          .replace(/^"+|"+$/g, '')   // bỏ quote
+          .replace(/\)+$/, '')       // nếu vẫn còn ')' rơi rớt ở cuối thì bỏ
+      );
+
+      // Render từng hàng values; nếu không có VALUES (INSERT ... SELECT) thì vẫn render danh sách cột
+      const rows = info.rows.length ? info.rows : [Array.from({ length: insertCols.length }, () => '')];
+
+      rows.forEach(row => {
+        insertCols.forEach((colName, idx) => {
+          const tr = document.createElement('tr');
+          const td1 = document.createElement('td');
+          const td2 = document.createElement('td');
+
+          td1.innerHTML = highlightSQL(`"${colName}"`);
+          td2.innerHTML = highlightSQL((row[idx] ?? '').trim());
+
+          tr.appendChild(td1); tr.appendChild(td2);
+          tbody.appendChild(tr);
+        });
+      });
+
+      det.appendChild(table);
+      return det;
+    }
+
+    /* ================== PARSE & RENDER ================== */
+    function parseLog() {
+      const raw = document.getElementById('input').value
+        .replace(/^\s*query:\s*START\s+TRANSACTION.*$/gmi, '')
+        .replace(/^\s*query:\s*(COMMIT|ROLLBACK).*$/gmi, '');
+
+      const results = []; const blocks = []; let m;
+      const reSameLine = /(?:query:\s*)?([\s\S]*?)--\s*PARAMETERS:\s*(\[[\s\S]*?\])/gi;
+      while ((m = reSameLine.exec(raw)) !== null) blocks.push({ sql: m[1].trim(), paramsText: m[2].trim() });
+      const reNextLine = /(?:query:\s*)?([\s\S]*?)\r?\n[^\n]*?parameters?:\s*(\[[\s\S]*?\])/gi;
+      while ((m = reNextLine.exec(raw)) !== null) blocks.push({ sql: m[1].trim(), paramsText: m[2].trim() });
+
+      for (const b of blocks) {
+        const sqlRaw = (b.sql || '').trim();
+        if (!sqlRaw) continue;
+
+        if (!/\b(SELECT|INSERT|UPDATE|DELETE|WITH)\b/i.test(sqlRaw)) continue;
+        let params = [];
+        try { params = JSON.parse(b.paramsText); }
+        catch {
+          const coerced = b.paramsText.replace(/'([^']*)'/g, (_, s) => `"${s.replace(/"/g, '\\"')}"`);
+          try { params = JSON.parse(coerced); } catch { params = []; }
+        }
+        // interpolate
+        let i = 0; let q = b.sql;
+        if (/\$(\d+)/.test(q)) {
+          q = q.replace(/\$(\d+)/g, (_, n) => { const v = params[Number(n) - 1]; return typeof v === 'string' ? `'${String(v).replace(/'/g, "''")}'` : v; });
+        } else if (/\?/.test(q)) {
+          q = q.replace(/\?/g, () => { const v = params[i++]; return typeof v === 'string' ? `'${String(v).replace(/'/g, "''")}'` : v; });
+        }
+        q = q.replace(/^\s*query:\s*/i, '');
+        q = q.replace(/\s*--\s*PARAMETERS:\s*\[[\s\S]*?\]\s*$/i, '');
+        if (/^\s*START\s+TRANSACTION\b/i.test(q)) continue;
+        if (!q.trim()) continue;
+
+        const formatted = beautifySQL(q);
+        const insertInfo = extractInsertInfo(q);
+        results.push({ formatted, insertInfo });
+      }
+      render(results);
+      window._lastParsed = results.map(r => r.formatted);
+    }
+
+    function render(results) {
+      const outputDiv = document.getElementById('output'); outputDiv.innerHTML = '';
+      results.forEach((r, idx) => {
+        const block = document.createElement('div'); block.className = 'query-block';
+        const meta = document.createElement('div'); meta.className = 'meta';
+        meta.textContent = `#${idx + 1} • Formatted`; block.appendChild(meta);
+
+        const copy = document.createElement('button'); copy.className = 'copy-btn';
+        copy.innerText = '📋 Copy'; copy.onclick = () => copyToClipboard(r.formatted); block.appendChild(copy);
+
+        const groupsWrap = document.createElement('div'); groupsWrap.className = 'groups';
+        const left = document.createElement('div'); left.className = 'col-left';
+        const right = document.createElement('div'); right.className = 'col-right';
+
+        if (r.insertInfo) {
+          // INSERT: bảng ở trái, RETURNING ở phải
+          const gi = createInsertInspector(r.insertInfo);
+          left.appendChild(gi);
+
+          const gRet = createReturningGroup(r.insertInfo.returning);
+          if (gRet) right.appendChild(gRet);
+        } else {
+          // Non-INSERT: chia nhóm như cũ
+          const parts = splitSqlSections(r.formatted);
+          const gSelect = createGroup('Query', parts.select, true);
+          const gFrom = createGroup('From / Joins', parts.from, true);
+          const gWhere = createGroup('Where', parts.where, true);
+          const gOther = createGroup((/\bVALUES\b/i.test(parts.other) || /\bRETURNING\b/i.test(parts.other)) ? 'Values / Returning' : 'Other', parts.other, true);
+
+          if (gSelect) left.appendChild(gSelect);
+          [gFrom, gWhere, gOther].forEach(g => g && right.appendChild(g));
+        }
+
+        groupsWrap.appendChild(left); groupsWrap.appendChild(right);
+        block.appendChild(groupsWrap); outputDiv.appendChild(block);
+      });
+    }
+
+    // Auto-parse khi gõ
+    document.getElementById('input').addEventListener('input', parseLog);
+    parseLog();
+
+
+    async function copyToClipboard(text) {
+      try {
+        if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(text);
+        else { const el = document.createElement('textarea'); el.value = text; document.body.appendChild(el); el.select(); document.execCommand('copy'); el.remove(); }
+        alert('✅ Copied to clipboard!');
+      } catch (e) { alert('⚠️ Copy failed: ' + e.message); }
+    }
+
+    function saveJson() {
+      const data = { input: document.getElementById('input').value, output: window._lastParsed || [] };
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob); const a = document.createElement('a');
+      a.href = url; a.download = 'parsed-sql-log.json'; a.click(); URL.revokeObjectURL(url);
+    }
+  </script>
+</body>
+
+</html>
