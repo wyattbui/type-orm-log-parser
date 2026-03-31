@@ -230,6 +230,28 @@
       if (m) { service = m[1]; jsonStr = m[2]; }
       else if (t.startsWith('{')) { service = '_unknown'; jsonStr = t; }
       else {
+        const pinoLine = t.match(/^\[[\d:.]+\]\s+(\w+)\s+\(\d*\):\s+([\s\S]+)/);
+        if (pinoLine) {
+          const lvlRaw = pinoLine[1].toLowerCase();
+          const rest = pinoLine[2].trim();
+          const lvl = lvlRaw === 'error' ? 'error' : lvlRaw === 'warn' ? 'warn' : lvlRaw === 'info' ? 'info' : 'debug';
+          const jsonIdx = rest.lastIndexOf(' {');
+          let msg = rest, obj = null, ctx = '';
+          if (jsonIdx !== -1) {
+            try {
+              obj = JSON.parse(rest.slice(jsonIdx + 1));
+              msg = rest.slice(0, jsonIdx).trim();
+              ctx = obj.context || '';
+            } catch { obj = null; }
+          }
+          if (obj && SKIP_CTX.has(ctx)) continue;
+          if (obj?.query) {
+            entries.push({ service: '_unknown', level: lvl, msg, time: null, context: ctx, raw: t, isJson: true, obj });
+          } else {
+            entries.push({ service: '_unknown', level: lvl, msg: obj ? msg : rest, time: null, context: ctx, raw: t, isJson: !!obj, obj: obj || undefined });
+          }
+          continue;
+        }
         const plain = t.match(/^(\S+)\s*\|\s*(.+)/);
         if (plain) entries.push({ service: plain[1], level: 'info', msg: plain[2], time: null, context: '', raw: t, isJson: false });
         continue;
