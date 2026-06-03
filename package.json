@@ -1,0 +1,22 @@
+{
+  "name": "type-orm-log-parser",
+  "version": "1.0.0",
+  "description": "A simple web-based tool that converts raw TypeORM logs into **readable SQL queries**, supports **multiple log lines**, highlights **SQL syntax**, and allows easy **copying** and **saving**.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wyattbui/type-orm-log-parser.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/wyattbui/type-orm-log-parser/issues"
+  },
+  "homepage": "https://github.com/wyattbui/type-orm-log-parser#readme",
+  "dependencies": {
+    "express": "^5.2.1"
+  }
+}

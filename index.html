@@ -180,6 +180,8 @@
   let logContextChecks = {};
   let levelFilter = 'all';
 
+  let lastContent = "";
+
   function parseLevel(n) { return LEVEL_MAP[n] || (n >= 50 ? 'error' : n >= 40 ? 'warn' : n >= 30 ? 'info' : 'debug'); }
 
   function escHtml(s) { return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -808,6 +810,40 @@ ${e.target.result}`);
     renderLogContextList(logCtxMap);
     render();
   });
+
+  setInterval(async () => {
+  try {
+    console.log("polling...");
+
+    const txt = await fetch("http://localhost:9999/logs")
+      .then(r => r.text());
+
+    console.log("received", txt.length);
+
+    if (txt !== lastContent) {
+      console.log("log changed");
+
+      lastContent = txt;
+
+      document.getElementById("input").value = txt;
+
+      allEntries = parseEntries(txt);
+
+      const svcMap = detectServices(allEntries);
+      renderServiceList(svcMap);
+
+      const ctxMap = detectContexts(allEntries);
+      renderContextList(ctxMap);
+
+      const logCtxMap = detectLogContexts(allEntries);
+      renderLogContextList(logCtxMap);
+
+      render();
+    }
+  } catch (e) {
+    console.error("poll error", e);
+  }
+}, 1000);
 </script>
 </body>
 </html>
