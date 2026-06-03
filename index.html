@@ -57,7 +57,8 @@
     .flow-block .flow-header{background:#dbeafe}
     .flow-header{padding:8px 12px;display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;background:#fafafa;border-bottom:1px solid var(--border)}
     .flow-header:hover{background:#f3f4f6}
-    .flow-title{font-weight:700;font-size:13px;flex:1}
+    .flow-title{font-weight:700;font-size:13px;flex:1;display:flex;flex-direction:column;align-items:flex-start;gap:2px;line-height:1.2}
+    .flow-trace{font-size:11px;color:#6b7280;font-weight:400;word-break:break-all}
     .flow-meta{font-size:11px;color:var(--muted)}
     .flow-badges{display:flex;gap:4px}
     .badge{font-size:10px;padding:2px 6px;border-radius:999px;font-weight:700}
@@ -80,6 +81,7 @@
     .ll-debug{background:var(--l-debug);color:var(--t-debug)}
     .log-svc{font-size:11px;color:#6d28d9;font-weight:600;white-space:nowrap;min-width:100px;overflow:hidden;text-overflow:ellipsis}
     .log-ctx{font-size:11px;color:#0369a1;white-space:nowrap;min-width:120px;overflow:hidden;text-overflow:ellipsis}
+    .log-src{font-size:11px;color:#6b7280;white-space:nowrap;min-width:140px;overflow:hidden;text-overflow:ellipsis}
     .log-msg{flex:1;word-break:break-word;font-size:12px}
     .sql-block{margin-top:6px;width:100%;background:#1f2937;color:#e5e7eb;border-radius:8px;padding:10px 12px;position:relative;font-size:12px}
     .sql-block pre{white-space:pre-wrap;word-wrap:break-word;margin:0}
@@ -157,7 +159,7 @@
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
         <label style="display:flex;align-items:center;gap:6px;padding:5px 12px;border-radius:8px;border:1px solid var(--border);background:#fff;cursor:pointer;font-size:12px;font-weight:600;color:#374151" id="fileLabel">
           📂 Import file
-          <input type="file" id="fileInput" accept=".log,.txt" style="display:none" onchange="onFileImport(this)">
+          <input type="file" id="fileInput" accept=".log,.txt" multiple style="display:none" onchange="onFileImport(this)">
         </label>
         <span id="fileName" style="font-size:11px;color:var(--muted)"></span>
         <button id="clearFileBtn" style="display:none" class="filter-btn" onclick="clearFile()">✕ Clear file</button>
@@ -217,23 +219,66 @@
 
   const SKIP_CTX = new Set(['ElasticAPMService','ElasticAPMInterceptor']);
 
+  function normalizeTraceValue(v) {
+    return typeof v === 'string' ? v.trim() : '';
+  }
+
+  function extractTraceMeta(obj) {
+    const headers = obj?.req?.headers || {};
+    const rawRequestId = normalizeTraceValue(obj?.requestId || headers['x-request-id'] || obj?.req?.id);
+    const rawCorrelationId = normalizeTraceValue(obj?.correlationId || headers['x-correlation-id']);
+    const requestId = rawRequestId || rawCorrelationId;
+    const correlationId = rawCorrelationId || rawRequestId;
+    return { requestId, correlationId };
+  }
+
+  function getTraceId(e) {
+    return normalizeTraceValue(
+      e.correlationId ||
+      e.requestId ||
+      e.obj?.correlationId ||
+      e.obj?.requestId ||
+      e.obj?.req?.headers?.['x-correlation-id'] ||
+      e.obj?.req?.headers?.['x-request-id'] ||
+      e.obj?.req?.id ||
+      ''
+    );
+  }
+
   function parseEntries(raw) {
     const entries = [];
     const seen = new Set();
+    let currentSourceFile = '';
     for (const line of raw.split('\n')) {
       const t = line.trim();
       if (!t) continue;
-      if (seen.has(t)) continue;
-      seen.add(t);
+      if (t.startsWith('@@SOURCE_FILE@@ ')) {
+        currentSourceFile = t.slice('@@SOURCE_FILE@@ '.length).trim();
+        continue;
+      }
+      const seenKey = `${currentSourceFile}::${t}`;
+      if (seen.has(seenKey)) continue;
+      seen.add(seenKey);
       const m = t.match(/^(\S+)\s*\|\s*(\{.+)/);
       let service = '', jsonStr = '';
       if (m) { service = m[1]; jsonStr = m[2]; }
       else if (t.startsWith('{')) { service = '_unknown'; jsonStr = t; }
       else {
-        const pinoLine = t.match(/^\[[\d:.]+\]\s+(\w+)\s+\(\d*\):\s+([\s\S]+)/);
+        const pinoLine =
+          t.match(/^\[([\d:.]+)\]\s+(\w+)\s+\((\d*)\):\s+([\s\S]+)/) ||
+          t.match(/^\[([\d:.]+)\]\s+(\w+):\s+([\s\S]+)/);
         if (pinoLine) {
-          const lvlRaw = pinoLine[1].toLowerCase();
-          const rest = pinoLine[2].trim();
+          let lvlRaw = '', rest = '';
+          if (pinoLine.length === 5) {
+            lvlRaw = pinoLine[2].toLowerCase();
+            rest = pinoLine[4].trim();
+          } else {
+            lvlRaw = pinoLine[2].toLowerCase();
+            rest = pinoLine[3].trim();
+          }
+
+
+
           const lvl = lvlRaw === 'error' ? 'error' : lvlRaw === 'warn' ? 'warn' : lvlRaw === 'info' ? 'info' : 'debug';
           const jsonIdx = rest.lastIndexOf(' {');
           let msg = rest, obj = null, ctx = '';
@@ -245,23 +290,25 @@
             } catch { obj = null; }
           }
           if (obj && SKIP_CTX.has(ctx)) continue;
+          const traceMeta = extractTraceMeta(obj);
           if (obj?.query) {
-            entries.push({ service: '_unknown', level: lvl, msg, time: null, context: ctx, raw: t, isJson: true, obj });
+            entries.push({ service: '_unknown', level: lvl, msg, time: null, context: ctx, sourceFile: currentSourceFile, requestId: traceMeta.requestId, correlationId: traceMeta.correlationId, raw: t, isJson: true, obj });
           } else {
-            entries.push({ service: '_unknown', level: lvl, msg: obj ? msg : rest, time: null, context: ctx, raw: t, isJson: !!obj, obj: obj || undefined });
+            entries.push({ service: '_unknown', level: lvl, msg: obj ? msg : rest, time: null, context: ctx, sourceFile: currentSourceFile, requestId: traceMeta.requestId, correlationId: traceMeta.correlationId, raw: t, isJson: !!obj, obj: obj || undefined });
           }
           continue;
         }
         const plain = t.match(/^(\S+)\s*\|\s*(.+)/);
-        if (plain) entries.push({ service: plain[1], level: 'info', msg: plain[2], time: null, context: '', raw: t, isJson: false });
+        if (plain) entries.push({ service: plain[1], level: 'info', msg: plain[2], time: null, context: '', sourceFile: currentSourceFile, raw: t, isJson: false });
         continue;
       }
       let obj;
-      try { obj = JSON.parse(jsonStr); } catch { entries.push({ service, level: 'info', msg: jsonStr.slice(0,120), time: null, context: '', raw: t, isJson: false }); continue; }
+      try { obj = JSON.parse(jsonStr); } catch { entries.push({ service, level: 'info', msg: jsonStr.slice(0,120), time: null, context: '', sourceFile: currentSourceFile, raw: t, isJson: false }); continue; }
       if (SKIP_CTX.has(obj.context)) continue;
       const level = parseLevel(obj.level);
       const ts = obj.time ? new Date(obj.time) : null;
-      entries.push({ service, level, msg: obj.msg || obj.message || '', time: ts, context: obj.context || '', hostname: obj.hostname || '', raw: t, isJson: true, obj });
+      const traceMeta = extractTraceMeta(obj);
+      entries.push({ service, level, msg: obj.msg || obj.message || '', time: ts, context: obj.context || '', hostname: obj.hostname || '', sourceFile: currentSourceFile, requestId: traceMeta.requestId, correlationId: traceMeta.correlationId, raw: t, isJson: true, obj });
     }
     return entries;
   }
@@ -472,15 +519,64 @@
 
   function groupFlows(entries) {
     const flows = [];
+    const traceFlows = {};
     const currentFlows = {};
     const jobFlows = {};
+    const serviceTraceFlows = {};
+    const hostTraceFlows = {};
+
+    const markFlow = (flow, e) => {
+      flow.entries.push(e);
+      if (e.level === 'error') flow.hasError = true;
+      if (e.level === 'warn') flow.hasWarn = true;
+      if (e.msg.includes('Anonymous Request')) flow.isAnon = true;
+      if (e.time) flow.lastTime = e.time;
+    };
 
     for (const e of entries) {
-      const hostname = e.hostname || e.obj?.hostname || '_';
+      const hostname = e.hostname || e.obj?.hostname || e.obj?.req?.headers?.host || '_';
       const hostKey  = `${e.service}::${hostname}`;
+      const traceId = getTraceId(e);
       const isFlowStart = e.context === 'AppAuthGuard' && e.msg.includes('📃Context name:');
       const jobStartM   = e.context === 'WorkerService' && e.msg.match(/^Processing job (\S+) of type (.+)$/);
       const jobEndM     = e.context === 'WorkerService' && e.msg.match(/^Job (\S+) completed/);
+
+      if (traceId) {
+        let flow = traceFlows[traceId];
+        if (!flow) {
+          flow = {
+            name: `🔗 ${traceId.slice(0, 12)}`,
+            traceId,
+            service: e.service,
+            startTime: e.time,
+            lastTime: e.time,
+            entries: [],
+            hasError: false,
+            hasWarn: false,
+            isAnon: false,
+            isWorker: false,
+            metadata: {
+              requestId: e.requestId || e.correlationId || '',
+              correlationId: e.correlationId || e.requestId || '',
+              context: e.context || '',
+              service: e.service || ''
+            }
+          };
+          traceFlows[traceId] = flow;
+          flows.push(flow);
+        }
+
+        markFlow(flow, e);
+        serviceTraceFlows[e.service] = flow;
+        hostTraceFlows[hostKey] = flow;
+        continue;
+      }
+
+      const tracedTarget = hostTraceFlows[hostKey] || serviceTraceFlows[e.service];
+      if (tracedTarget) {
+        markFlow(tracedTarget, e);
+        continue;
+      }
 
       if (isFlowStart) {
         const name = e.msg.replace(/.*📃Context name:\s*/,'').trim();
@@ -538,6 +634,7 @@
       <span class="log-level ${levelClass(e.level)}">${e.level.toUpperCase()}</span>
       <span class="log-svc" title="${e.service}">${e.service}</span>
       <span class="log-ctx" title="${e.context}">${e.context}</span>
+      ${e.sourceFile ? `<span class="log-src" title="${escHtml(e.sourceFile)}">${escHtml(e.sourceFile)}</span>` : ''}
       <span class="log-msg">${msgHtml}</span>`;
 
     if (isSQL) {
@@ -617,7 +714,10 @@
       const header = document.createElement('div');
       header.className = 'flow-header';
       header.innerHTML = `<span class="chevron open">▶</span>
-        <span class="flow-title">📃 ${escHtml(flow.name)}</span>
+        <span class="flow-title">
+          <span>${escHtml(flow.name)}</span>
+          ${flow.traceId ? `<span class="flow-trace">${escHtml(flow.traceId)}</span>` : ''}
+        </span>
         <span class="flow-meta">${fmtTime(flow.startTime)} • ${flow.entries.length} logs</span>
         <div class="flow-badges">
           ${flow.hasError?'<span class="badge badge-error">ERROR</span>':''}
@@ -628,6 +728,12 @@
 
       const body = document.createElement('div');
       body.className = 'flow-body open';
+      if (flow.traceId && flow.metadata) {
+        const meta = document.createElement('div');
+        meta.style.cssText = 'padding:8px 12px;background:#fafafa;border-bottom:1px solid #e5e7eb;font-size:11px';
+        meta.innerHTML = `<b>requestId:</b> ${escHtml(flow.metadata.requestId || '')}&nbsp;&nbsp;<b>service:</b> ${escHtml(flow.metadata.service || '')}&nbsp;&nbsp;<b>context:</b> ${escHtml(flow.metadata.context || '')}`;
+        body.appendChild(meta);
+      }
       const base = flow.startTime;
       for (const e of flow.entries) {
         if (e.context && logContextChecks[e.context] === false) continue;
@@ -657,16 +763,24 @@
   }
 
   function onFileImport(input) {
-    const file = input.files[0];
-    if (!file) return;
-    document.getElementById('fileName').textContent = file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)';
+    const files = [...input.files];
+    if (!files.length) return;
+    document.getElementById('fileName').textContent = files.length === 1
+      ? files[0].name + ' (' + (files[0].size / 1024).toFixed(1) + ' KB)'
+      : `${files.length} files`;
     document.getElementById('clearFileBtn').style.display = '';
-    const reader = new FileReader();
-    reader.onload = e => {
-      document.getElementById('input').value = e.target.result;
+    Promise.all(files.map(file => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = e => resolve(`@@SOURCE_FILE@@ ${file.name}
+${e.target.result}`);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsText(file);
+    }))).then(chunks => {
+      document.getElementById('input').value = chunks.join('\n');
       document.getElementById('input').dispatchEvent(new Event('input'));
-    };
-    reader.readAsText(file);
+    }).catch(err => {
+      alert('⚠️ ' + err.message);
+    });
   }
 
   function clearFile() {
